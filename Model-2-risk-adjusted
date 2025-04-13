@@ -1,0 +1,98 @@
+library(pacman)
+p_load(tidyquant, quantmod, BatchGetSymbols, 
+       xts, tibbletime, tidyverse, lubridate, 
+       PerformanceAnalytics, TTR, PortfolioAnalytics, janitor, dygraphs)
+
+nyse <- tq_exchange("NYSE") |> clean_names()
+
+colnames(nyse)
+
+nyse <- nyse |> filter(market_cap > 1000000000, last_sale_price > 5, 
+                       ipo_year <= 2012, 
+                       country == "United States", 
+                       !grepl("\\^|\\.|-", symbol))
+
+tickers <- nyse$symbol
+
+nyse_monthly_data <- BatchGetSymbols(
+  tickers = tickers, 
+  freq.data = "monthly", thresh.bad.data = 0.5,
+  first.date = as.Date("2013-01-01"),
+  last.date = as.Date("2023-12-31"), 
+  cache.folder = file.path(tempdir(), "BGS_Cache"))
+
+price_data <- nyse_monthly_data$df.tickers |> clean_names()
+
+summary(price_data$price_adjusted)
+
+price_data <- price_data |> 
+  group_by(ticker) |> 
+  arrange(ref_date) |> 
+  mutate(monthly_return = price_adjusted / lag(price_adjusted) - 1,
+    return_12m = price_adjusted / lag(price_adjusted, 12) - 1,
+    return_1m = price_adjusted / lag(price_adjusted, 1) - 1, 
+    momentum = return_12m - return_1m,
+    volatility_12m = rollapply(monthly_return, width = 12, FUN = sd, align = "right", fill = NA),
+    risk_adjusted_momentum = momentum / volatility_12m)
+
+rebalance_dates <- price_data |> filter(!is.na(momentum)) |> 
+  pull(ref_date) |> 
+  unique() |> 
+  sort()
+
+etf_nav <- c(100)
+nav_dates <- c()
+selected_tickers <- list()
+
+for (i in 1:(length(rebalance_dates) - 1)) {
+  current_date <- rebalance_dates[i]
+  next_date <- rebalance_dates[i + 1]
+  current_data <- filter(price_data, ref_date == current_date, !is.na(risk_adjusted_momentum))
+  current_data <- slice_max(current_data, order_by = risk_adjusted_momentum, n = 10)
+  top_tickers <- current_data$ticker
+  next_returns <- filter(price_data, ref_date == next_date, ticker %in% top_tickers)
+  avg_return <- mean(next_returns$monthly_return, na.rm = TRUE)
+  
+  if (!is.na(avg_return)) {
+    previous_nav <- last(etf_nav)
+    new_nav <- previous_nav * (1 + avg_return)
+    etf_nav <- append(etf_nav, new_nav)
+    nav_dates <- append(nav_dates, next_date)
+    selected_tickers <- append(selected_tickers, list(top_tickers))
+  }
+}
+
+etf_xts <- xts(etf_nav[-1], order.by = nav_dates)
+
+spy <- BatchGetSymbols(
+  tickers = "SPY",
+  freq.data = "monthly",
+  first.date = as.Date("2013-01-01"), thresh.bad.data = 0.5,
+  last.date = as.Date("2023-12-31"), 
+  cache.folder = file.path(tempdir(), "BGS_Cache"))
+
+spy_price_data <- spy$df.tickers |> clean_names()
+
+spy_price_data <- spy_price_data |> arrange(ref_date) |> 
+  mutate(monthly_returns = price_adjusted / lag(price_adjusted) - 1) |> 
+  filter(!is.na(monthly_returns), ref_date %in% index(etf_xts))
+
+spy_nav <- c(100)
+
+for (i in 1:nrow(spy_price_data)) {
+  returns <- spy_price_data$monthly_returns[i]
+  spy_previous_nav <- last(spy_nav)
+  spy_new_nav <- spy_previous_nav * (1 + returns)
+  spy_nav <- append(spy_nav, spy_new_nav)
+}
+
+colnames(etf_xts) <- "ETF"
+colnames(spy_xts) <- "SPY"
+combined_nav <- cbind(etf_xts, spy_xts)
+
+dygraph(combined_nav, main = "Momentum ETF vs SPY")  |> 
+  dySeries("ETF", label = "Momentum ETF", color = "blue") |> 
+  dySeries("SPY", label = "SPY", color = "red") |> 
+  dyOptions(stackedGraph = FALSE, drawGrid = TRUE) |> 
+  dyRangeSelector()
+
