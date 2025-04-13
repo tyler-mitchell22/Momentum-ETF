@@ -86,6 +86,10 @@ for (i in 1:nrow(spy_price_data)) {
   spy_nav <- append(spy_nav, spy_new_nav)
 }
 
+spy_returns <- xts(spy_price_data$monthly_returns, order.by = spy_price_data$ref_date)
+
+spy_xts <- 100 * cumprod(1 + spy_returns)
+
 colnames(etf_xts) <- "ETF"
 colnames(spy_xts) <- "SPY"
 combined_nav <- cbind(etf_xts, spy_xts)
@@ -95,4 +99,3 @@ dygraph(combined_nav, main = "Momentum ETF vs SPY")  |>
   dySeries("SPY", label = "SPY", color = "red") |> 
   dyOptions(stackedGraph = FALSE, drawGrid = TRUE) |> 
   dyRangeSelector()
-
