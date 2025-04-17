@@ -42,8 +42,8 @@ The strategy delivers exceptional performance metrics:
 - Despite similar volatility profiles over both time periods, the strategy has achieved significantly higher returns in the recent 3-year window
 
 ## File Structure
-- `momentum_etf.R`: Main script implementing the momentum strategy
-- `momentum_etf.md`: Markdown with a table of contents
+- `Model-2-risk-adjusted.R`: Main script implementing the momentum strategy
+- `Momentum_ETF_Markdown.md`: Markdown with a table of contents
 - `Momentum ETF vs SPY Performance.png`: Visualization of results from the entire period
 
 ## Requirements
