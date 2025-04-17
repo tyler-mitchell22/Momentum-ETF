@@ -11,7 +11,7 @@ The strategy follows these key steps:
 4. Equally weights the selected stocks in the portfolio
 
 ## Performance Highlights
-The strategy delivers exceptional performance metrics:
+The strategy delivers exceptional 3-year performance metrics:
 
 ### 3-Year Performance
 - **CAGR**: 16.22%
