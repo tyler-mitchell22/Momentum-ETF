@@ -1,7 +1,6 @@
 library(pacman)
-p_load(tidyquant, quantmod, BatchGetSymbols, 
-       xts, tibbletime, tidyverse, lubridate, 
-       PerformanceAnalytics, TTR, PortfolioAnalytics, janitor, dygraphs)
+p_load(tidyquant, BatchGetSymbols, 
+       xts, tidyverse, lubridate, TTR, janitor, dygraphs)
 options(scipen = 999)
 
 nyse <- tq_exchange("NYSE") |> clean_names()
@@ -119,7 +118,7 @@ etf_nav <- etf_nav[order(nav_dates)]
 # 3-Year
 start_date_3y <- nav_dates[length(nav_dates) - 36]
 end_date_3y <- nav_dates[length(nav_dates)]
-n_years_3y <- as.numeric(difftime(end_date, start_date, units = "days")) / 365
+n_years_3y <- as.numeric(difftime(end_date_3y, start_date_3y, units = "days")) / 365
 
 cagr_3y <- (last(etf_nav) / etf_nav[length(etf_nav) - 36]) ^ (1 / n_years) - 1
 cagr_3y
@@ -231,4 +230,3 @@ alpha_3y_annualized_pct
 alpha_inc <- mean(monthly_returns_inc) - (rf_monthly + beta_inc * (mean(spy_returns_inc) - rf_monthly))
 alpha_inc_annualized_pct <- alpha_inc * 12 * 100
 alpha_inc_annualized_pct
-
