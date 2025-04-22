@@ -1,5 +1,5 @@
 # Momentum ETF Strategy
-
+ 
 ## Overview
 This repository is an implementation of a momentum-based ETF strategy that selects stocks from the NYSE based on risk-adjusted momentum. The strategy shows comparable results with the S&P 500 (SPY) from 2013-2020, and shows significant out performance post-pandemic through 2023.
 
