@@ -47,7 +47,11 @@ The strategy delivers exceptional 3-year performance metrics:
 - `Momentum ETF vs SPY Performance.png`: Visualization of results from the entire period
 
 ## Requirements
-The strategy implementation requires the following R packages:
+The strategy implementation requires the following tools / packages:
+Tools:
+- R/RStudio
+- DB Browser for SQLite
+Packages:
 - tidyquant
 - BatchGetSymbols
 - xts
@@ -56,12 +60,22 @@ The strategy implementation requires the following R packages:
 - lubridate
 - TTR
 - dygraphs
+- RSQLite
+- DBI
 
 ## Usage
 To run the strategy:
 1. Install required packages using `install.packages()` or `p_load()` function from the pacman library
 2. Run the R script code in your IDE of choice to see the full analysis with visualizations
-3. Feel free to use the framework and adjust any parameters or the stock universe and compare the results!
+3. The script will automatically create a SQLite database (`momentum_etf.sqlite`) to track:
+   - Selected stocks at each rebalance date
+   - Historical ETF and SPY performance
+   - All performance metrics
+4. After the script finishes, open the generated database file in DB Browser to:
+   - Browse the ETF composition history
+   - Run custom queries to analyze performance patterns
+   - Track the most frequently selected stocks
+5. Feel free to use the framework and adjust any parameters or the stock universe and compare the results!
 
 ## Disclaimer
 This strategy is provided for educational and research purposes only. Past performance is not indicative of future results.
