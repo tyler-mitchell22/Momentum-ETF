@@ -48,9 +48,11 @@ The strategy delivers exceptional 3-year performance metrics:
 
 ## Requirements
 The strategy implementation requires the following tools / packages:
+
 ## Tools:
 - R/RStudio
 - DB Browser for SQLite
+  
 ## Packages:
 - tidyquant
 - BatchGetSymbols
