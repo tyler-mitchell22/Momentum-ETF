@@ -14,31 +14,31 @@ The strategy follows these key steps:
 The strategy delivers exceptional 3-year performance metrics:
 
 ### 3-Year Performance
-- **CAGR**: 16.22%
-- **Total Return**: 56.98%
-- **Beta**: -0.25 (negative correlation to market)
-- **Alpha**: 13.26%
-- **Maximum Drawdown**: -19.76%
-- **Sharpe Ratio**: 0.22
-- **Sortino Ratio**: 1.52
-- **Calmar Ratio**: 0.01
-- **Volatility**: 20.77%
+- **CAGR**: 58.98%
+- **Total Return**: 301.85%
+- **Beta**: -0.08 (negative correlation to market)
+- **Alpha**: 66.14%
+- **Maximum Drawdown**: -14.92%
+- **Sharpe Ratio**: 0.21
+- **Sortino Ratio**: 4.99
+- **Calmar Ratio**: 0.04
+- **Volatility**: 97.69%
 
 ### Since Inception (2013-2023)
-- **Total Return**: 234.36%
-- **CAGR**: 49.53%
-- **Beta**: 1.18
-- **Alpha**: 0.33%
-- **Maximum Drawdown**: -35.09%
-- **Sharpe Ratio**: 0.21
-- **Sortino Ratio**: 0.91
+- **Total Return**: 674.74%
+- **CAGR**: 23.15%
+- **Beta**: 0.69
+- **Alpha**: 19.29%
+- **Maximum Drawdown**: -19.54%
+- **Sharpe Ratio**: 0.15
+- **Sortino Ratio**: 2.49
 - **Calmar Ratio**: 0.01
-- **Volatility**: 19.97%
+- **Volatility**: 54.93%
 
 ## Key Insights
-- The strategy's recent negative 3-year beta of -0.25 is extremely rare and valuable, indicating counter-market movement
-- Strong positive alpha, 13.26% over 3 years, shows significant risk-adjusted outperformance
-- The strategy appears to have evolved substantially over time, with the inception beta of 1.18 showing initial market correlation
+- The strategy's recent negative 3-year beta of -0.08 is extremely rare and valuable, indicating counter-market movement
+- Strong positive alpha, 66.14% over 3 years, shows significant risk-adjusted outperformance
+- The strategy appears to have evolved substantially over time, with the inception beta of 0.69 showing initial market correlation
 - Despite similar volatility profiles over both time periods, the strategy has achieved significantly higher returns in the recent 3-year window
 
 ## File Structure
