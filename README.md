@@ -20,7 +20,7 @@ This repository contains a Python implementation of a momentum-based ETF strateg
 
 ## Performance
 The strategy has been backtested from 2010 to 2025 and shows impressive performance:
-- **~5600% cumulative return** (~48x initial investment)
+- **~5600% cumulative return** (~56x initial investment)
 - Effective at capturing momentum while minimizing unnecessary turnover
 - Optimal parameter combination found through extensive testing
 
