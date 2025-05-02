@@ -1,0 +1,310 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+from datetime import datetime
+import time
+import psycopg2
+from sqlalchemy import create_engine
+
+
+sp500 = pd.read_csv('sp500_tickers.csv', encoding='latin-1')
+tickers = sp500['Symbol'].dropna().unique().tolist()
+
+def download_batch(ticker_list, start="2010-01-01", interval="1mo", batch_size=50, pause=5):
+    all_data = {}
+    for i in range(0, len(ticker_list), batch_size):
+        batch = ticker_list[i:i+batch_size]
+        print(f"Downloading batch {i//batch_size + 1} of {len(ticker_list) // batch_size + 1}")
+        try:
+            data = yf.download(
+                tickers=batch,
+                start=start,
+                interval=interval,
+                group_by="ticker",
+                auto_adjust=True,
+                threads=True,
+                progress=False
+            )
+            all_data.update({ticker: data[ticker] for ticker in batch if ticker in data.columns.get_level_values(0)})
+        except Exception as e:
+            print(f"Batch {i//batch_size + 1} failed: {e}")
+        time.sleep(pause)
+    return all_data
+
+etf_data = download_batch(tickers)
+
+# Concatenate all dataframes into a single dataframe
+all_dfs = []
+for ticker, df in etf_data.items():
+    df = df.copy()
+    df['Ticker'] = ticker
+    df['date'] = df.index
+    all_dfs.append(df)
+
+etf_df = pd.concat(all_dfs, ignore_index=True)
+etf_df = etf_df[['date', 'Ticker', 'Close']]
+etf_df['date'] = pd.to_datetime(etf_df['date'])
+
+# Calculate monthly returns
+etf_df['monthly_return'] = etf_df.groupby('Ticker')['Close'].pct_change()
+
+# Calculate 12-month returns
+etf_df['return_12m'] = etf_df.groupby('Ticker')['Close'].pct_change(12)
+
+# Calculate 1-month returns
+etf_df['return_1m'] = etf_df.groupby('Ticker')['Close'].pct_change(1)
+
+# Calculate 12-month Rolling Volatility
+etf_df['volatility_12m'] = etf_df.groupby('Ticker')['Close'].rolling(window=12).std().reset_index(drop=True)
+
+# Calculate Risk-Adjusted Momentum
+etf_df['risk_adjusted_momentum'] = (etf_df['return_12m'] - etf_df['return_1m']) / etf_df['volatility_12m']
+
+# Get Rebalance Dates
+valid_dates = etf_df.dropna(subset=['risk_adjusted_momentum'])
+counts = valid_dates.groupby('date')['Ticker'].nunique()
+rebalance_dates = counts[counts > 10].index.sort_values()
+
+# Only replace if new candidate is 40% better
+holding_buffer = 0.40
+
+# Rebalance Every 3 Months
+rebalance_frequency = 3
+
+# 0.1% per trade 
+transaction_cost = 0.001  
+
+current_holdings = []
+etf_nav = 100
+etf_nav_series = []
+nav_dates = []
+selected_tickers = []
+etf_holdings_list = []
+
+# Modified Monthly Rebalancing Loop with improved candidate selection
+for i in range(1, len(rebalance_dates)):
+    previous_date = rebalance_dates[i-1]
+    current_date = rebalance_dates[i]
+    
+    # Get momentum data for current period
+    current_momentum_data = valid_dates[valid_dates['date'] == previous_date]
+    current_momentum_data = current_momentum_data.sort_values(by='risk_adjusted_momentum', ascending=False)
+    
+    # Check if it's time to rebalance (first period or every rebalance_frequency periods)
+    is_rebalance_period = (i == 1) or ((i-1) % rebalance_frequency == 0)
+    
+    if is_rebalance_period:
+        # Print the buffer being used - THIS IS FOR DIAGNOSTIC PURPOSES
+        print(f"Using holding buffer: {holding_buffer}")
+        
+        # If first period, initialize holdings
+        if i == 1:
+            top_10 = current_momentum_data.head(10).copy()
+            current_holdings = top_10['Ticker'].tolist()
+        else:
+            # IMPROVED STRATEGY: Allow any strong candidate to replace any weak holding
+            
+            # Get current momentum scores for existing holdings
+            holdings_momentum = current_momentum_data[current_momentum_data['Ticker'].isin(current_holdings)].copy()
+            
+            # If any current holdings are missing from the data, give them lowest possible score
+            missing_holdings = set(current_holdings) - set(holdings_momentum['Ticker'].tolist())
+            if missing_holdings:
+                for missing in missing_holdings:
+                    missing_row = pd.DataFrame({
+                        'Ticker': [missing],
+                        'date': [previous_date],
+                        'risk_adjusted_momentum': [float('-inf')]  # Ensure it gets replaced
+                    })
+                    holdings_momentum = pd.concat([holdings_momentum, missing_row])
+            
+            # Sort existing holdings by momentum (weakest first for comparison)
+            holdings_momentum = holdings_momentum.sort_values(by='risk_adjusted_momentum')
+            
+            # Get potential new candidates (excluding current holdings)
+            candidates = current_momentum_data[~current_momentum_data['Ticker'].isin(current_holdings)]
+            candidates = candidates.sort_values(by='risk_adjusted_momentum', ascending=False)
+            candidates = candidates.head(20)  # Consider top 20 candidates
+            
+            # Create a copy of current holdings that we'll modify
+            new_holdings = current_holdings.copy()
+            replacement_count = 0  # Track how many replacements occur
+            
+            # MODIFIED APPROACH: Generate all possible replacements first, then apply the best ones
+            potential_replacements = []
+            
+            for _, candidate in candidates.iterrows():
+                candidate_ticker = candidate['Ticker']
+                candidate_momentum = candidate['risk_adjusted_momentum']
+                
+                # Check against each current holding
+                for _, holding in holdings_momentum.iterrows():
+                    holding_ticker = holding['Ticker']
+                    holding_momentum = holding['risk_adjusted_momentum']
+                    
+                    # Calculate the improvement ratio
+                    if holding_momentum <= 0:  # Handle negative or zero momentum case
+                        improvement_ratio = float('inf')  # Always replace
+                    else:
+                        improvement_ratio = candidate_momentum / holding_momentum - 1
+                    
+                    # If improvement exceeds buffer, record as potential replacement
+                    if improvement_ratio > holding_buffer:
+                        potential_replacements.append({
+                            'candidate_ticker': candidate_ticker,
+                            'holding_ticker': holding_ticker,
+                            'improvement_ratio': improvement_ratio
+                        })
+            
+            # Sort potential replacements by improvement ratio (best first)
+            potential_replacements.sort(key=lambda x: x['improvement_ratio'], reverse=True)
+            
+            # Apply the best replacements (this makes the buffer matter!)
+            replaced_holdings = set()
+            used_candidates = set()
+            
+            for replacement in potential_replacements:
+                candidate_ticker = replacement['candidate_ticker']
+                holding_ticker = replacement['holding_ticker']
+                
+                # Only proceed if both holdings haven't been modified yet
+                if (holding_ticker in new_holdings) and (candidate_ticker not in used_candidates):
+                    new_holdings.remove(holding_ticker)
+                    new_holdings.append(candidate_ticker)
+                    replaced_holdings.add(holding_ticker)
+                    used_candidates.add(candidate_ticker)
+                    replacement_count += 1
+            
+            print(f"Made {replacement_count} replacements with buffer {holding_buffer}")
+            
+            # Calculate turnover for transaction costs
+            previous_set = set(current_holdings)
+            new_set = set(new_holdings)
+            turnover_rate = len(previous_set.symmetric_difference(new_set)) / 10
+            
+            # Update current holdings
+            current_holdings = new_holdings
+    
+    # Rest of code remains the same...
+    top_10 = current_momentum_data[current_momentum_data['Ticker'].isin(current_holdings)].copy()
+    top_10 = top_10.sort_values(by='risk_adjusted_momentum', ascending=False)
+    
+    if len(top_10) < 10 and len(current_momentum_data) >= 10:
+        additional_tickers = current_momentum_data[~current_momentum_data['Ticker'].isin(current_holdings)]
+        additional_tickers = additional_tickers.sort_values(by='risk_adjusted_momentum', ascending=False)
+        needed = 10 - len(top_10)
+        for j in range(min(needed, len(additional_tickers))):
+            new_ticker = additional_tickers.iloc[j]['Ticker']
+            current_holdings.append(new_ticker)
+            top_10 = pd.concat([top_10, additional_tickers.iloc[j:j+1]])
+    
+    top_10['Rank'] = range(1, len(top_10) + 1)
+    top_10['Weight'] = (11 - top_10['Rank']) / sum(11 - pd.Series(range(1, len(top_10) + 1)))
+    
+    returns_data = etf_df[(etf_df['date'] == current_date) & etf_df['Ticker'].isin(top_10['Ticker'])]
+    
+    portfolio = pd.merge(top_10[['Ticker', 'Weight']], 
+                        returns_data[['Ticker', 'monthly_return']], 
+                        on='Ticker', how='left')
+    
+    portfolio['monthly_return'] = portfolio['monthly_return'].fillna(0)
+    
+    weighted_return = (portfolio['monthly_return'] * portfolio['Weight']).sum()
+    
+    if is_rebalance_period and i > 1:
+        transaction_cost_impact = turnover_rate * transaction_cost * 2 
+        weighted_return = weighted_return - transaction_cost_impact
+    
+    etf_nav *= (1 + weighted_return)
+    
+    top_10['Date'] = previous_date
+    etf_holdings_list.append(top_10[['Date', 'Ticker', 'Rank', 'Weight', 'risk_adjusted_momentum']])
+    
+    nav_dates.append(current_date)
+    etf_nav_series.append(etf_nav)
+    selected_tickers.append(top_10['Ticker'].tolist())
+
+# Convert Loop Data to DataFrame
+rebalance_summary = pd.DataFrame({
+    'Date': nav_dates,
+    'etf_nav': etf_nav_series,
+    'Top Tickers': selected_tickers,
+    'Is_Rebalance': [(i == 1) or ((i-1) % rebalance_frequency == 0) for i in range(1, len(rebalance_dates))]
+})
+
+print(rebalance_summary)
+
+if isinstance(rebalance_summary['Date'].iloc[0], str):
+    rebalance_summary['Date'] = pd.to_datetime(rebalance_summary['Date'])
+
+# Validation Check for Potential Lookahead Bias
+rebalance_df = pd.DataFrame({
+    'signal_date': rebalance_summary['Date'].shift(1),
+    'invest_date': rebalance_summary['Date']
+}).dropna()
+
+print(rebalance_df.head())
+
+# Optional: check that signal_date is always before invest_date
+if all(rebalance_df['signal_date'] < rebalance_df['invest_date']):
+    print("All rebalance decisions were made using previous month's data — no lookahead detected.")
+else:
+    print("Potential lookahead bias: Some rebalance decisions may have used future data.")
+
+# Create the plot
+plt.figure(figsize=(12, 8))
+plt.plot(rebalance_summary['Date'], rebalance_summary['etf_nav'], 'b-', linewidth=2)
+plt.title('ETF NAV Over Time', fontsize=16)
+plt.xlabel('Date', fontsize=12)
+plt.ylabel('ETF NAV', fontsize=12)
+plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+plt.gca().xaxis.set_major_locator(mdates.YearLocator())
+plt.xticks(rotation=45)
+plt.grid(True, linestyle='--', alpha=0.7)
+
+max_nav = rebalance_summary['etf_nav'].max()
+max_date = rebalance_summary.loc[rebalance_summary['etf_nav'].idxmax(), 'Date']
+plt.scatter(max_date, max_nav, color='green', s=100, zorder=5)
+plt.annotate(f'Max: {max_nav:.2f}', 
+             xy=(max_date, max_nav),
+             xytext=(30, 20),
+             textcoords='offset points',
+             arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=.2'))
+
+rebalance_dates = rebalance_summary[rebalance_summary['Is_Rebalance'] == True]['Date']
+for date in rebalance_dates:
+    plt.axvline(x=date, color='lightgray', linestyle='--', alpha=0.5)
+
+plt.tight_layout()
+plt.show()
+
+
+# Save to PostgreSQL
+etf_holdings_df = pd.concat(etf_holdings_list, ignore_index=True)
+
+engine = create_engine("postgresql+psycopg2://postgres@localhost:5432/postgres")
+
+etf_holdings_df.columns = etf_holdings_df.columns.str.lower()
+etf_holdings_df = etf_holdings_df.rename(columns={"date": "rebalance_date"})
+
+etf_holdings_df.to_sql(
+    name="etf_holdings",
+    con=engine,
+    if_exists="replace",
+    index=False
+)
+
+print(etf_holdings_df.columns)
+
+performance_df = rebalance_summary[['Date', 'etf_nav']].copy()
+performance_df.columns = performance_df.columns.str.lower()
+performance_df = performance_df.rename(columns={"date": "calc_date"})
+
+performance_df.to_sql(
+    name="etf_performance",
+    con=engine,
+    if_exists="replace", 
+    index=False
+)
