@@ -10,7 +10,7 @@ This repository contains a Python implementation of a momentum-based ETF strateg
 - **Buffer-Based Rebalancing**: Requires new candidates to exceed existing holdings' momentum by a significant margin (optimally 40%)
 - **Quarterly Rebalancing**: Portfolio updates occur every 3 months to balance capturing new trends vs. minimizing transaction costs
 - **Rank-Based Weighting**: Holdings are weighted according to their momentum rank, with stronger performers receiving higher allocations
-- **Defined Investment Universe**: The strategy uses a consistent list of 503 S&P 500 constituents, reflecting a recent snapshot of the index. Only stocks with complete historical data from 2010 onward were included. While this introduces a degree of survivorship bias, it ensures a clean, investable universe aligned with real-world data availability and practical implementation constraints.
+- **Defined Investment Universe**: The strategy uses a list of 503 S&P 500 constituents, reflecting a recent snapshot of the index. Only stocks with complete historical data from 2010 onward were included. While this introduces a degree of survivorship bias, it ensures a clean, investable universe aligned with real-world data availability and practical implementation constraints.
 
 ### Key Parameters
 - **Momentum Lookback**: 12 months for trend, 1 month for mean reversion
