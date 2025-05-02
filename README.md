@@ -51,7 +51,7 @@ The strategy has been backtested from 2010 to 2025 and shows impressive performa
 1. Ensure all dependencies are installed:
 2. Place your S&P 500 tickers file (CSV format) in the same directory
 3. Run the script:
-4. 4. Results will be stored in PostgreSQL and visualized
+4. Results will be stored in PostgreSQL and visualized
 
 ## Key Innovations
 
