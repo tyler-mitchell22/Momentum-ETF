@@ -1,7 +1,7 @@
 # Buffer Momentum ETF Strategy
 
 ## Overview
-This repository contains a Python implementation of a momentum-based ETF strategy that uses a buffer mechanism to optimize portfolio rebalancing decisions. The strategy selects stocks from the S&P 500 based on risk-adjusted momentum and employs a buffering system to reduce unnecessary turnover and capture momentum efficiently.
+This repository contains an implementation of a momentum-based ETF strategy done in Python. It uses a buffer mechanism to optimize portfolio rebalancing decisions. The strategy selects stocks from the S&P 500 based on risk-adjusted momentum and employs a buffering system to reduce unnecessary turnover and capture momentum efficiently.
 
 ## Strategy Methodology
 
