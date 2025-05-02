@@ -83,114 +83,102 @@ nav_dates = []
 selected_tickers = []
 etf_holdings_list = []
 
-# Modified Monthly Rebalancing Loop with improved candidate selection
+# Modified Monthly Rebalancing Loop
 for i in range(1, len(rebalance_dates)):
     previous_date = rebalance_dates[i-1]
     current_date = rebalance_dates[i]
-    
-    # Get momentum data for current period
+
+    # Get ranked momentum scores from the prior rebalance date
     current_momentum_data = valid_dates[valid_dates['date'] == previous_date]
     current_momentum_data = current_momentum_data.sort_values(by='risk_adjusted_momentum', ascending=False)
-    
-    # Check if it's time to rebalance (first period or every rebalance_frequency periods)
+
+    # Determine if it's a rebalance period (first loop or every Nth period)
     is_rebalance_period = (i == 1) or ((i-1) % rebalance_frequency == 0)
-    
+
     if is_rebalance_period:
-        # Print the buffer being used - THIS IS FOR DIAGNOSTIC PURPOSES
         print(f"Using holding buffer: {holding_buffer}")
-        
-        # If first period, initialize holdings
+
         if i == 1:
+            # Initialize holdings in first period
             top_10 = current_momentum_data.head(10).copy()
             current_holdings = top_10['Ticker'].tolist()
         else:
-            # IMPROVED STRATEGY: Allow any strong candidate to replace any weak holding
-            
-            # Get current momentum scores for existing holdings
+            # Get momentum scores for current holdings
             holdings_momentum = current_momentum_data[current_momentum_data['Ticker'].isin(current_holdings)].copy()
-            
-            # If any current holdings are missing from the data, give them lowest possible score
+
+            # Add placeholder rows for any missing holdings
             missing_holdings = set(current_holdings) - set(holdings_momentum['Ticker'].tolist())
             if missing_holdings:
                 for missing in missing_holdings:
                     missing_row = pd.DataFrame({
                         'Ticker': [missing],
                         'date': [previous_date],
-                        'risk_adjusted_momentum': [float('-inf')]  # Ensure it gets replaced
+                        'risk_adjusted_momentum': [float('-inf')]
                     })
                     holdings_momentum = pd.concat([holdings_momentum, missing_row])
-            
-            # Sort existing holdings by momentum (weakest first for comparison)
+
+            # Sort holdings by weakest momentum
             holdings_momentum = holdings_momentum.sort_values(by='risk_adjusted_momentum')
-            
-            # Get potential new candidates (excluding current holdings)
+
+            # Get top candidates not already held
             candidates = current_momentum_data[~current_momentum_data['Ticker'].isin(current_holdings)]
-            candidates = candidates.sort_values(by='risk_adjusted_momentum', ascending=False)
-            candidates = candidates.head(20)  # Consider top 20 candidates
-            
-            # Create a copy of current holdings that we'll modify
+            candidates = candidates.sort_values(by='risk_adjusted_momentum', ascending=False).head(20)
+
             new_holdings = current_holdings.copy()
-            replacement_count = 0  # Track how many replacements occur
-            
-            # MODIFIED APPROACH: Generate all possible replacements first, then apply the best ones
+            replacement_count = 0
             potential_replacements = []
-            
+
+            # Evaluate all possible replacements that exceed the buffer
             for _, candidate in candidates.iterrows():
                 candidate_ticker = candidate['Ticker']
                 candidate_momentum = candidate['risk_adjusted_momentum']
-                
-                # Check against each current holding
+
                 for _, holding in holdings_momentum.iterrows():
                     holding_ticker = holding['Ticker']
                     holding_momentum = holding['risk_adjusted_momentum']
-                    
-                    # Calculate the improvement ratio
-                    if holding_momentum <= 0:  # Handle negative or zero momentum case
-                        improvement_ratio = float('inf')  # Always replace
+
+                    if holding_momentum <= 0:
+                        improvement_ratio = float('inf')
                     else:
                         improvement_ratio = candidate_momentum / holding_momentum - 1
-                    
-                    # If improvement exceeds buffer, record as potential replacement
+
                     if improvement_ratio > holding_buffer:
                         potential_replacements.append({
                             'candidate_ticker': candidate_ticker,
                             'holding_ticker': holding_ticker,
                             'improvement_ratio': improvement_ratio
                         })
-            
-            # Sort potential replacements by improvement ratio (best first)
+
+            # Apply top replacements while avoiding duplicates
             potential_replacements.sort(key=lambda x: x['improvement_ratio'], reverse=True)
-            
-            # Apply the best replacements (this makes the buffer matter!)
             replaced_holdings = set()
             used_candidates = set()
-            
+
             for replacement in potential_replacements:
                 candidate_ticker = replacement['candidate_ticker']
                 holding_ticker = replacement['holding_ticker']
-                
-                # Only proceed if both holdings haven't been modified yet
+
                 if (holding_ticker in new_holdings) and (candidate_ticker not in used_candidates):
                     new_holdings.remove(holding_ticker)
                     new_holdings.append(candidate_ticker)
                     replaced_holdings.add(holding_ticker)
                     used_candidates.add(candidate_ticker)
                     replacement_count += 1
-            
+
             print(f"Made {replacement_count} replacements with buffer {holding_buffer}")
-            
-            # Calculate turnover for transaction costs
+
+            # Calculate portfolio turnover rate
             previous_set = set(current_holdings)
             new_set = set(new_holdings)
             turnover_rate = len(previous_set.symmetric_difference(new_set)) / 10
-            
+
             # Update current holdings
             current_holdings = new_holdings
-    
-    # Rest of code remains the same...
+
+    # Build portfolio from current holdings and fill in if fewer than 10 remain
     top_10 = current_momentum_data[current_momentum_data['Ticker'].isin(current_holdings)].copy()
     top_10 = top_10.sort_values(by='risk_adjusted_momentum', ascending=False)
-    
+
     if len(top_10) < 10 and len(current_momentum_data) >= 10:
         additional_tickers = current_momentum_data[~current_momentum_data['Ticker'].isin(current_holdings)]
         additional_tickers = additional_tickers.sort_values(by='risk_adjusted_momentum', ascending=False)
@@ -199,40 +187,48 @@ for i in range(1, len(rebalance_dates)):
             new_ticker = additional_tickers.iloc[j]['Ticker']
             current_holdings.append(new_ticker)
             top_10 = pd.concat([top_10, additional_tickers.iloc[j:j+1]])
-    
+
+    # Assign ranks and compute rank-based weights
     top_10['Rank'] = range(1, len(top_10) + 1)
     top_10['Weight'] = (11 - top_10['Rank']) / sum(11 - pd.Series(range(1, len(top_10) + 1)))
-    
+
+    # Get current month’s return data for held tickers
     returns_data = etf_df[(etf_df['date'] == current_date) & etf_df['Ticker'].isin(top_10['Ticker'])]
-    
-    portfolio = pd.merge(top_10[['Ticker', 'Weight']], 
-                        returns_data[['Ticker', 'monthly_return']], 
-                        on='Ticker', how='left')
-    
+
+    # Merge return and weight data into portfolio
+    portfolio = pd.merge(top_10[['Ticker', 'Weight']],
+                         returns_data[['Ticker', 'monthly_return']],
+                         on='Ticker', how='left')
+
+    # Replace missing returns with zero
     portfolio['monthly_return'] = portfolio['monthly_return'].fillna(0)
-    
+
+    # Compute portfolio return
     weighted_return = (portfolio['monthly_return'] * portfolio['Weight']).sum()
-    
+
+    # Subtract transaction costs during rebalance periods (excluding the first one)
     if is_rebalance_period and i > 1:
-        transaction_cost_impact = turnover_rate * transaction_cost * 2 
+        transaction_cost_impact = turnover_rate * transaction_cost * 2
         weighted_return = weighted_return - transaction_cost_impact
-    
+
+    # Update NAV
     etf_nav *= (1 + weighted_return)
-    
+
+    # Store portfolio composition and performance
     top_10['Date'] = previous_date
     etf_holdings_list.append(top_10[['Date', 'Ticker', 'Rank', 'Weight', 'risk_adjusted_momentum']])
-    
     nav_dates.append(current_date)
     etf_nav_series.append(etf_nav)
     selected_tickers.append(top_10['Ticker'].tolist())
 
-# Convert Loop Data to DataFrame
+# Compile full backtest results
 rebalance_summary = pd.DataFrame({
     'Date': nav_dates,
     'etf_nav': etf_nav_series,
     'Top Tickers': selected_tickers,
     'Is_Rebalance': [(i == 1) or ((i-1) % rebalance_frequency == 0) for i in range(1, len(rebalance_dates))]
 })
+
 
 print(rebalance_summary)
 
